@@ -1,0 +1,87 @@
+[bundle]
+name = "texlive2026-20261109"
+expected_hash = "7ba4f093cb4590c8b6dee55783fd8e51619c2b0d0bb96ae25d8f78fb8ac179b5"
+
+search_order = ["/", { input = "include" }, { input = "texlive" }]
+
+# Note the triple-quoted multiline strings:
+# this is the best way to get raw strings in TOML.
+ignore = [
+    # Files and extensions we usually want to ignore.
+    '''.*/00readme\.txt''',
+    '''.*/LICENSE\.md''',
+    '''.*/Makefile''',
+    '''.*/README''',
+    '''.*/README.md''',
+    '''.*/readme\.txt''',
+    '''.*/ls-R''',
+    '''.*\.fmt''',
+    '''.*\.log''',
+    '''.*\.lua''',
+    '''.*\.mf''',
+    '''.*\.pl''',
+    '''.*\.ps''',
+]
+
+
+[inputs."include"]
+source.dir.path = "include"
+
+
+# TeX Live 2026 as updated by tlmgr on 2026-11-09 (LaTeX 2026-06-01,
+# xeCJK 3.10.4): the tree MacTeX's xelatex uses, so that exams built by
+# Tectonic match the desktop xelatex builds.
+[inputs."texlive"]
+source.dir.path = "/usr/local/texlive/2026/texmf-dist"
+patch_dir = "patches/texlive"
+
+ignore = [
+    # I don't think tectonic has xindy support, ignore for now
+    '''xindy/.*''',
+
+    # We may need this, but exclude for now.
+    '''tex4ht/.*''',
+
+    # These require pLaTeX2e, tectonic uses XeTeX
+    '''tex/uplatex/.*''',
+    '''tex/uptex/.*''',
+
+    # Other odd tex formats & unnecessary files
+    '''tex/cslatex/.*''',
+    '''tex/csplain/.*''',
+    '''tex/ptex/.*''',
+    '''tex/platex/.*''',
+    '''tex/lollipop/.*''',
+    '''tex/context/.*''',
+    '''context/.*''',
+    '''texdoc/.*''',
+    '''texdoctk/.*''',
+    '''texconfig/.*''',
+    '''scripts/.*''',
+    '''dvips/.*''',
+    '''asymptote/.*''',
+    '''makeindex/.*''',
+    '''luatex-cache/.*''',
+    '''hb2gf/.*''',
+    '''chktex/.*''',
+    '''source/.*''',
+    '''doc/.*''',
+    '''tex/luatex/.*''',
+    '''tex/lualatex/.*''',
+    '''tex/lambda/.*''',
+    '''omega/.*''',
+]
+
+search_order = [
+    "tex/{xelatex,latex,xetex,plain,generic}//",
+    "bibtex/{bib,bst,csf}//",
+    "web2c//",
+    "fonts//",
+    "biber//",
+    "mft//",
+    "dvips//",
+    "makeindex//",
+    "{web,cweb}//",
+    "ttf2pk//",
+    "dvipdfmx/",
+]
