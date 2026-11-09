@@ -173,6 +173,12 @@ declare! {
 }
 
 declare! {
+    PartokenName {
+        partokenname [Unnamed(0)] [None],
+    }
+}
+
+declare! {
     BreakPenalty {
         penalty [Unnamed(0)] [None],
     }

@@ -112,6 +112,7 @@ pdf_include_page (pdf_ximage        *ximage,
   xform_info info;
   pdf_obj *contents = NULL, *catalog;
   pdf_obj *page = NULL, *resources = NULL, *markinfo = NULL;
+  pdf_obj *group = NULL, *group_obj = NULL;
 
   pf = pdf_open(ident, handle);
   if (!pf)
@@ -141,6 +142,13 @@ pdf_include_page (pdf_ximage        *ximage,
     }
     pdf_release_obj(tmp);
   }
+
+  /*
+   * Handle page's Group (e.g. transparency groups that set opacity).
+   */
+  group_obj = pdf_lookup_dict(page, "Group");
+  if (group_obj)
+    group = pdf_import_object(group_obj);
 
   /*
    * Handle page content stream.
@@ -184,6 +192,14 @@ pdf_include_page (pdf_ximage        *ximage,
     pdf_add_dict(contents_dict, pdf_new_name("Resources"),
                  pdf_import_object(resources));
     pdf_release_obj(resources);
+
+    if (group) {
+      pdf_add_dict(contents_dict, pdf_new_name("Group"), group);
+      group = NULL;
+    }
+
+    if (options.dict)
+      pdf_merge_dict(contents_dict, options.dict);
   }
 
   pdf_close(pf);
@@ -195,6 +211,8 @@ pdf_include_page (pdf_ximage        *ximage,
  error:
   dpx_warning("Cannot parse document. Broken PDF file?");
  error_silent:
+  if (group)
+    pdf_release_obj(group);
   pdf_release_obj(resources);
   pdf_release_obj(markinfo);
   pdf_release_obj(page);

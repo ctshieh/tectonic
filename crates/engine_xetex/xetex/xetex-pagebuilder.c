@@ -484,10 +484,17 @@ build_page(void)
 
                 q = new_skip_param(GLUE_PAR__top_skip); /* "now temp_ptr = glue_ptr(q) */
 
-                if (BOX_width(temp_ptr) > BOX_height(p))
-                    BOX_width(temp_ptr) -= BOX_height(p);
-                else
-                    BOX_width(temp_ptr) = 0;
+                if (INTPAR(xetex_upwards) > 0) {
+                    if (BOX_width(temp_ptr) > BOX_depth(p))
+                        BOX_width(temp_ptr) -= BOX_depth(p);
+                    else
+                        BOX_width(temp_ptr) = 0;
+                } else {
+                    if (BOX_width(temp_ptr) > BOX_height(p))
+                        BOX_width(temp_ptr) -= BOX_height(p);
+                    else
+                        BOX_width(temp_ptr) = 0;
+                }
 
                 LLIST_link(q) = p;
                 LLIST_link(CONTRIB_HEAD) = q;

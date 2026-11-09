@@ -68,7 +68,7 @@ unsigned char dig[23];
 int32_t tally;
 int32_t term_offset;
 int32_t file_offset;
-UTF16_code trick_buf[256];
+UnicodeScalar trick_buf[256];
 int32_t trick_count;
 int32_t first_count;
 bool doing_special;
@@ -360,6 +360,7 @@ scaled_t last_kern;
 int32_t last_node_type;
 int32_t insert_penalties;
 bool output_active;
+bool output_can_end;
 
 uint16_t _xeq_level_array[EQTB_SIZE - INT_BASE + 1];
 
@@ -2667,8 +2668,9 @@ load_fmt_file(void)
     if (hash_high > 0)
         undump_things(eqtb[EQTB_SIZE + 1], hash_high);
 
+    /* partoken.ch: \partokenname may point par_loc at any control sequence */
     undump_int(x);
-    if (x < HASH_BASE || x > hash_top)
+    if (x < ACTIVE_BASE || x > eqtb_top)
         goto bad_fmt;
     else
         par_loc = x;
@@ -3182,6 +3184,7 @@ initialize_more_variables(void)
         hyph_next = HYPH_PRIME;
 
     output_active = false;
+    output_can_end = false;
     insert_penalties = 0;
     ligature_present = false;
     cancel_boundary = false;
@@ -3344,6 +3347,7 @@ initialize_more_initex_variables(void)
     INTPAR(hang_after) = 1;
     INTPAR(max_dead_cycles) = 25;
     INTPAR(escape_char) = '\\';
+    INTPAR(show_stream) = -1;
     INTPAR(end_line_char) = CARRIAGE_RETURN;
 
     for (k = 0; k <= NUMBER_USVS - 1; k++)

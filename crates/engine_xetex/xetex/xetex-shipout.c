@@ -1782,6 +1782,7 @@ out_what(int32_t p)
         break;
 
     case SPECIAL_NODE:
+    case LATESPECIAL_NODE:
         special_out(p);
         break;
 
@@ -2063,11 +2064,55 @@ prune_movements(int32_t l)
 }
 
 
+static /* "Expand macros in the token list and make link(def_ref) point to the
+ * result": shared by \write and \special shipout (latespecial nodes). */
 static void
+expand_write_tokens(int32_t p)
+{
+    int32_t old_mode;
+    int32_t q, r;
+
+    q = get_avail();
+    mem[q].b32.s0 = (RIGHT_BRACE_TOKEN + '}' );
+    r = get_avail();
+    mem[q].b32.s1 = r;
+    mem[r].b32.s0 = CS_TOKEN_FLAG + END_WRITE;
+    begin_token_list(q, INSERTED);
+    begin_token_list(mem[p + 1].b32.s1, WRITE_TEXT);
+    q = get_avail();
+    mem[q].b32.s0 = (LEFT_BRACE_TOKEN + '{' );
+    begin_token_list(q, INSERTED);
+
+    old_mode = cur_list.mode;
+    cur_list.mode = 0;
+    cur_cs = write_loc;
+    q = scan_toks(false, true);
+    cur_list.mode = old_mode;
+    get_token();
+
+    if (cur_tok != CS_TOKEN_FLAG + END_WRITE) { /*1412:*/
+        error_here_with_diagnostic("Unbalanced write command");
+        capture_to_diagnostic(NULL);
+        help_ptr = 2;
+        help_line[1] = "On this page there's a \\write with fewer real {'s than }'s.";
+        help_line[0] = "I can't handle that very well; good luck.";
+        error();
+
+        do {
+            get_token();
+        } while (cur_tok != CS_TOKEN_FLAG + END_WRITE);
+    }
+
+    end_token_list();
+}
+
+
+void
 special_out(int32_t p)
 {
     unsigned char /*max_selector */ old_setting;
     pool_pointer k;
+    int32_t h;
 
     if (cur_h != dvi_h) {
         movement(cur_h - dvi_h, RIGHT1);
@@ -2079,8 +2124,14 @@ special_out(int32_t p)
     }
     doing_special = true;
     old_setting = selector;
+    if (NODE_subtype(p) == LATESPECIAL_NODE) {
+        expand_write_tokens(p);
+        h = def_ref;
+    } else {
+        h = mem[p + 1].b32.s1;
+    }
     selector = SELECTOR_NEW_STRING ;
-    show_token_list(mem[mem[p + 1].b32.s1].b32.s1, TEX_NULL, pool_size - pool_ptr);
+    show_token_list(mem[h].b32.s1, TEX_NULL, pool_size - pool_ptr);
     selector = old_setting;
 
     if (pool_ptr + 1 > pool_size)
@@ -2105,6 +2156,8 @@ special_out(int32_t p)
             while (k++ < for_end);
     }
     pool_ptr = str_start[str_ptr - TOO_BIG_CHAR];
+    if (NODE_subtype(p) == LATESPECIAL_NODE)
+        flush_list(def_ref);
     doing_special = false;
 }
 
@@ -2113,43 +2166,10 @@ static void
 write_out(int32_t p)
 {
     unsigned char old_setting; /* max_selector enum */
-    int32_t old_mode;
     small_number j;
-    int32_t q, r;
     int32_t d;
 
-    q = get_avail();
-    mem[q].b32.s0 = (RIGHT_BRACE_TOKEN + '}' );
-    r = get_avail();
-    mem[q].b32.s1 = r;
-    mem[r].b32.s0 = CS_TOKEN_FLAG + END_WRITE;
-    begin_token_list(q, INSERTED);
-    begin_token_list(mem[p + 1].b32.s1, WRITE_TEXT);
-    q = get_avail();
-    mem[q].b32.s0 = (LEFT_BRACE_TOKEN + '{' );
-    begin_token_list(q, INSERTED);
-
-    old_mode = cur_list.mode;
-    cur_list.mode = 0;
-    cur_cs = write_loc;
-    q = scan_toks(false, true);
-    get_token();
-
-    if (cur_tok != CS_TOKEN_FLAG + END_WRITE) { /*1412:*/
-        error_here_with_diagnostic("Unbalanced write command");
-        capture_to_diagnostic(NULL);
-        help_ptr = 2;
-        help_line[1] = "On this page there's a \\write with fewer real {'s than }'s.";
-        help_line[0] = "I can't handle that very well; good luck.";
-        error();
-
-        do {
-            get_token();
-        } while (cur_tok != CS_TOKEN_FLAG + END_WRITE);
-    }
-
-    cur_list.mode = old_mode;
-    end_token_list();
+    expand_write_tokens(p);
     old_setting = selector;
     j = mem[p + 1].b32.s0;
 

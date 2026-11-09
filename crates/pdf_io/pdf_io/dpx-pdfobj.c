@@ -3411,7 +3411,8 @@ pdf_get_object (pdf_file *pf, uint32_t obj_num, uint16_t obj_gen)
 
         length = pdf_stream_length(objstm);
         p = (const char *) pdf_stream_dataptr(objstm) + first + data[2*index+1];
-        q = p + (index == n-1 ? length : first+data[2*index+3]);
+        q = (const char *) pdf_stream_dataptr(objstm)
+            + (index == n-1 ? length : first+data[2*index+3]);
         result = parse_pdf_object(&p, q, pf);
         if (!result)
             goto error;

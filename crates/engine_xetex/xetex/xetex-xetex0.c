@@ -929,6 +929,11 @@ show_node_list(int32_t p)
                     print_esc_cstr("special");
                     print_mark(mem[p + 1].b32.s1);
                     break;
+                case LATESPECIAL_NODE:
+                    print_esc_cstr("special");
+                    print_cstr(" shipout");
+                    print_mark(mem[p + 1].b32.s1);
+                    break;
                 case LANGUAGE_NODE:
                     print_esc_cstr("setlanguage");
                     print_int(mem[p + 1].b32.s1);
@@ -1337,6 +1342,7 @@ flush_node_list(int32_t p)
                     break;
                 case WRITE_NODE:
                 case SPECIAL_NODE:
+                case LATESPECIAL_NODE:
                     delete_token_ref(mem[p + 1].b32.s1);
                     free_node(p, WRITE_NODE_SIZE);
                     goto done;
@@ -1533,6 +1539,7 @@ copy_node_list(int32_t p)
                     break;
                 case WRITE_NODE:
                 case SPECIAL_NODE:
+                case LATESPECIAL_NODE:
                     r = get_node(WRITE_NODE_SIZE);
                     mem[mem[p + 1].b32.s1].b32.s0++;
                     words = WRITE_NODE_SIZE;
@@ -2024,6 +2031,15 @@ void print_param(int32_t n)
     case INT_PAR__tracing_stack_levels:
         print_esc_cstr("tracingstacklevels");
         break;
+    case INT_PAR__partoken_context:
+        print_esc_cstr("partokencontext");
+        break;
+    case INT_PAR__show_stream:
+        print_esc_cstr("showstream");
+        break;
+    case INT_PAR__ignore_primitive_error:
+        print_esc_cstr("ignoreprimitiveerror");
+        break;
     case INT_PAR__xetex_linebreak_penalty:
         print_esc_cstr("XeTeXlinebreakpenalty");
         break;
@@ -2376,6 +2392,10 @@ print_cmd_chr(uint16_t cmd, int32_t chr_code)
 
     case AFTER_GROUP:
         print_esc_cstr("aftergroup");
+        break;
+
+    case PARTOKEN_NAME:
+        print_esc_cstr("partokenname");
         break;
 
     case ASSIGN_FONT_DIMEN:
@@ -4346,27 +4366,27 @@ void eq_destroy(memory_word w)
 {
     int32_t q;
     switch (w.b16.s1) {
-    case 113:
-    case 114:
-    case 115:
-    case 116:
+    case CALL:
+    case LONG_CALL:
+    case OUTER_CALL:
+    case LONG_OUTER_CALL:
         delete_token_ref(w.b32.s1);
         break;
-    case 119:
+    case GLUE_REF:
         delete_glue_ref(w.b32.s1);
         break;
-    case 120:
+    case SHAPE_REF:
         {
             q = w.b32.s1;
             if (q != TEX_NULL)
                 free_node(q, mem[q].b32.s0 + mem[q].b32.s0 + 1);
         }
         break;
-    case 121:
+    case BOX_REF:
         flush_node_list(w.b32.s1);
         break;
-    case 72:
-    case 91:
+    case TOKS_REGISTER:
+    case REGISTER:
         if (w.b32.s1 < 0 || w.b32.s1 > 19)
             delete_sa_ref(w.b32.s1);
         break;
@@ -4938,12 +4958,15 @@ void end_token_list(void)
         else {
 
             delete_token_ref(cur_input.start);
-            if (cur_input.index == MACRO)
+            if (cur_input.index == MACRO) {
                 while (param_ptr > cur_input.limit) {
 
                     param_ptr--;
                     flush_list(param_stack[param_ptr]);
                 }
+            } else if (cur_input.index == OUTPUT_TEXT && !output_can_end) {
+                fatal_error("Unbalanced output routine");
+            }
         }
     } else if (cur_input.index == U_TEMPLATE) {
 
@@ -4962,7 +4985,7 @@ void back_input(void)
 {
     int32_t p;
     while ((cur_input.state == TOKEN_LIST) && (cur_input.loc == TEX_NULL)
-           && (cur_input.index != V_TEMPLATE))
+           && (cur_input.index != V_TEMPLATE) && (cur_input.index != OUTPUT_TEXT))
         end_token_list();
     p = get_avail();
     mem[p].b32.s0 = cur_tok;
@@ -5602,6 +5625,8 @@ restart:
                         cur_chr = NO_EXPAND_FLAG;
                     }
                 } else {
+                    if (cur_cs == END_WRITE && cur_list.mode == 0)
+                        fatal_error("Unbalanced write command");
                     check_outer_validity();
                 }
             }
@@ -5964,7 +5989,8 @@ macro_call(void)
         } while (mem[r].b32.s0 != END_MATCH_TOKEN);
     }
 
-    while (cur_input.state == TOKEN_LIST && cur_input.loc == TEX_NULL && cur_input.index != V_TEMPLATE)
+    while (cur_input.state == TOKEN_LIST && cur_input.loc == TEX_NULL && cur_input.index != V_TEMPLATE
+           && cur_input.index != OUTPUT_TEXT)
         end_token_list();
 
     begin_token_list(ref_count, MACRO);
@@ -6248,7 +6274,7 @@ reswitch:
                 scanner_status = save_scanner_status;
                 t = cur_tok;
                 back_input();
-                if (t >= CS_TOKEN_FLAG) {
+                if (t >= CS_TOKEN_FLAG && t != CS_TOKEN_FLAG + END_WRITE) {
                     p = get_avail();
                     mem[p].b32.s0 = CS_TOKEN_FLAG + FROZEN_DONT_EXPAND;
                     mem[p].b32.s1 = cur_input.loc;
@@ -6728,9 +6754,9 @@ restart: /*422:*/
     } while (cur_cmd == SPACER || cur_cmd == RELAX);
 reswitch:
     switch (cur_cmd) {
-    case 11:
-    case 12:
-    case 68:
+    case LETTER:
+    case OTHER_CHAR:
+    case CHAR_GIVEN:
         {
             c = MATH_CODE(cur_chr);
             if (math_char(c) == ACTIVE_MATH_CHAR) {
@@ -6745,7 +6771,7 @@ reswitch:
             }
         }
         break;
-    case 16:
+    case CHAR_NUM:
         {
             scan_char_num();
             cur_chr = cur_val;
@@ -6753,7 +6779,7 @@ reswitch:
             goto reswitch;
         }
         break;
-    case 17:
+    case MATH_CHAR_NUM:
         if (cur_chr == 2) {
             scan_math_class_int();
             c = set_class(cur_val);
@@ -6770,15 +6796,15 @@ reswitch:
             c = set_class(cur_val / 4096) + set_family((cur_val % 4096) / 256) + (cur_val % 256);
         }
         break;
-    case 69:
+    case MATH_GIVEN:
         {
             c = set_class(cur_chr / 4096) + set_family((cur_chr % 4096) / 256) + (cur_chr % 256);
         }
         break;
-    case 70:
+    case XETEX_MATH_GIVEN:
         c = cur_chr;
         break;
-    case 15:
+    case DELIM_NUM:
         {
             if (cur_chr == 1) {
                 scan_math_class_int();
@@ -8084,8 +8110,22 @@ restart:
             }
         } else if (cur_tok < CS_TOKEN_FLAG + SINGLE_BASE) {
             cur_val = cur_tok - (CS_TOKEN_FLAG + ACTIVE_BASE);
-        } else {
+        } else if (cur_tok < CS_TOKEN_FLAG + NULL_CS) {
             cur_val = cur_tok - (CS_TOKEN_FLAG + SINGLE_BASE);
+        } else {
+            /* xetex.web: a one-letter name above U+FFFF is stored as a
+             * UTF-16 surrogate pair, i.e. as a "multiletter" sequence */
+            int32_t cs = cur_tok - CS_TOKEN_FLAG;
+            str_number m = (cs >= HASH_BASE) ? hash[cs].s1 : 0;
+
+            cur_val = TOO_BIG_USV;
+            if (m >= TOO_BIG_CHAR && length(m) == 2) {
+                pool_pointer k = str_start[m - TOO_BIG_CHAR];
+
+                if (str_pool[k] >= 0xD800 && str_pool[k] <= 0xDBFF
+                    && str_pool[k + 1] >= 0xDC00 && str_pool[k + 1] <= 0xDFFF)
+                    cur_val = 0x10000 + (str_pool[k] - 0xD800) * 0x400 + str_pool[k + 1] - 0xDC00;
+            }
         }
 
         if (cur_val > BIGGEST_USV) {
@@ -8243,16 +8283,16 @@ xetex_scan_dimen(bool mu, bool inf, bool shortcut, bool requires_units)
         if (cur_cmd >= MIN_INTERNAL && cur_cmd <= MAX_INTERNAL) { /*468:*/
             if (mu) {
                 scan_something_internal(MU_VAL, false);
-                if (cur_val_level >= GLUE_VAL) {
-                    v = mem[cur_val + 1].b32.s1;
-                    delete_glue_ref(cur_val);
-                    cur_val = v;
-                }
-
-                if (cur_val_level == MU_VAL)
+                if (cur_val_level != INT_VAL) {
+                    if (cur_val_level >= GLUE_VAL) {
+                        v = mem[cur_val + 1].b32.s1;
+                        delete_glue_ref(cur_val);
+                        cur_val = v;
+                    }
+                    if (cur_val_level != MU_VAL)
+                        mu_error();
                     goto attach_sign;
-                if (cur_val_level != INT_VAL)
-                    mu_error();
+                }
             } else {
                 scan_something_internal(DIMEN_VAL, false);
                 if (cur_val_level == DIMEN_VAL)
@@ -9813,7 +9853,7 @@ conv_toks(void)
         break;
 
     case XETEX_REVISION_CODE:
-        print_cstr(".999994");
+        print_cstr(".999998");
         break;
 
     case XETEX_VARIATION_NAME_CODE:
@@ -10612,7 +10652,7 @@ begin_name(void)
 
 
 bool
-more_name(UTF16_code c)
+more_name(UnicodeScalar c)
 {
     if (stop_at_space && file_name_quote_char == 0 && c == ' ' )
         return false;
@@ -10628,10 +10668,18 @@ more_name(UTF16_code c)
         return true;
     }
 
-    if (pool_ptr + 1 > pool_size)
-        overflow("pool size", pool_size - init_pool_ptr);
+    if (c > 0xFFFF) {
+        if (pool_ptr + 2 > pool_size)
+            overflow("pool size", pool_size - init_pool_ptr);
 
-    str_pool[pool_ptr++] = c;
+        str_pool[pool_ptr++] = 0xD800 + (c - 0x10000) / 0x400;
+        str_pool[pool_ptr++] = 0xDC00 + (c - 0x10000) % 0x400;
+    } else {
+        if (pool_ptr + 1 > pool_size)
+            overflow("pool size", pool_size - init_pool_ptr);
+
+        str_pool[pool_ptr++] = c;
+    }
 
     if (IS_DIR_SEP(c)) {
         area_delimiter = cur_length();
@@ -10836,7 +10884,7 @@ scan_file_name(void)
         } while(cur_cmd == SPACER);
 
         while (true) {
-            if (cur_cmd > OTHER_CHAR || cur_chr > BIGGEST_CHAR) {
+            if (cur_cmd > OTHER_CHAR || cur_chr > BIGGEST_USV) {
                 back_input();
                 break;
             }
@@ -11708,8 +11756,27 @@ read_font_info(int32_t u, str_number nom, str_number aire, scaled_t s)
     if (s != -1000) {
         if (s >= 0)
             z = s;
-        else
+        else {
+            bool save_arith_error = arith_error;
+
+            sw = z;
             z = xn_over_d(z, -(int32_t) s, 1000);
+            if (arith_error || z >= 0x8000000) {
+                error_here_with_diagnostic("Font ");
+                sprint_cs(u);
+                print_char('=');
+                print_file_name(nom, aire, cur_ext);
+                print_cstr(" scaled ");
+                print_int(-(int32_t) s);
+                print_cstr(" scaled to 2048pt or higher");
+                capture_to_diagnostic(NULL);
+                help_ptr = 1;
+                help_line[0] = "I will ignore the scaling factor.";
+                error();
+                z = sw;
+            }
+            arith_error = save_arith_error;
+        }
     }
 
     font_size[f] = z;
@@ -13065,7 +13132,7 @@ done:
 void init_span(int32_t p)
 {
     push_nest();
-    if (cur_list.mode == -104)
+    if (cur_list.mode == -HMODE)
         cur_list.aux.b32.s0 = 1000;
     else {
 
@@ -13078,8 +13145,8 @@ void init_span(int32_t p)
 void init_row(void)
 {
     push_nest();
-    cur_list.mode = (-105) - cur_list.mode;
-    if (cur_list.mode == -104)
+    cur_list.mode = (-HMODE - VMODE) - cur_list.mode;
+    if (cur_list.mode == -HMODE)
         cur_list.aux.b32.s0 = 0;
     else
         cur_list.aux.b32.s1 = 0;
@@ -13175,7 +13242,7 @@ bool fin_col(void)
         unsave();
         new_save_level(ALIGN_GROUP);
         {
-            if (cur_list.mode == -104) {
+            if (cur_list.mode == -HMODE) {
                 adjust_tail = cur_tail;
                 pre_adjust_tail = cur_pre_tail;
                 u = hpack(mem[cur_list.head].b32.s1, 0, ADDITIONAL);
@@ -13260,7 +13327,7 @@ void fin_row(void)
 {
     int32_t p;
 
-    if (cur_list.mode == -104) {
+    if (cur_list.mode == -HMODE) {
         p = hpack(mem[cur_list.head].b32.s1, 0, ADDITIONAL);
         pop_nest();
         if (cur_pre_head != cur_pre_tail) {
@@ -13850,6 +13917,21 @@ done:
 }
 
 
+
+/* xetex.web: an error in original TeX that \ignoreprimitiveerror can
+ * demote to a note in the log file. */
+static void
+print_ignored_err(const char* msg)
+{
+    selector_t old_selector = selector;
+
+    selector = SELECTOR_LOG_ONLY;
+    print_ln();
+    print_cstr("ignored: ");
+    print_cstr(msg);
+    selector = old_selector;
+}
+
 int32_t vert_break(int32_t p, scaled_t h, scaled_t d)
 {
     int32_t prev_p;
@@ -13956,16 +14038,20 @@ update_heights: /*1011: */
             active_width[2 + mem[q].b16.s1] = active_width[2 + mem[q].b16.s1] + mem[q + 2].b32.s1;
             active_width[6] = active_width[6] + mem[q + 3].b32.s1;
             if ((mem[q].b16.s0 != NORMAL) && (mem[q + 3].b32.s1 != 0)) {
-                error_here_with_diagnostic("Infinite glue shrinkage found in box being split");
-                capture_to_diagnostic(NULL);
-                {
-                    help_ptr = 4;
-                    help_line[3] = "The box you are \\vsplitting contains some infinitely";
-                    help_line[2] = "shrinkable glue, e.g., `\\vss' or `\\vskip 0pt minus 1fil'.";
-                    help_line[1] = "Such glue doesn't belong there; but you can safely proceed,";
-                    help_line[0] = "since the offensive shrinkability has been made finite.";
+                if (INTPAR(ignore_primitive_error) & 1) {
+                    print_ignored_err("Infinite glue shrinkage found in box being split");
+                } else {
+                    error_here_with_diagnostic("Infinite glue shrinkage found in box being split");
+                    capture_to_diagnostic(NULL);
+                    {
+                        help_ptr = 4;
+                        help_line[3] = "The box you are \\vsplitting contains some infinitely";
+                        help_line[2] = "shrinkable glue, e.g., `\\vss' or `\\vskip 0pt minus 1fil'.";
+                        help_line[1] = "Such glue doesn't belong there; but you can safely proceed,";
+                        help_line[0] = "since the offensive shrinkability has been made finite.";
+                    }
+                    error();
                 }
-                error();
                 r = new_spec(q);
                 GLUE_SPEC_shrink_order(r) = NORMAL;
                 delete_glue_ref(q);
@@ -14721,7 +14807,7 @@ void package(small_number c)
     save_ptr = save_ptr - 3;
     v = INTPAR(xetex_upwards);
     INTPAR(xetex_upwards) = u;
-    if (cur_list.mode == -104)
+    if (cur_list.mode == -HMODE)
         cur_box = hpack(mem[cur_list.head].b32.s1, save_stack[save_ptr + 2].b32.s1, save_stack[save_ptr + 1].b32.s1);
     else {
 
@@ -15144,7 +15230,7 @@ void append_discretionary(void)
         new_save_level(DISC_GROUP);
         scan_left_brace();
         push_nest();
-        cur_list.mode = -104;
+        cur_list.mode = -HMODE;
         cur_list.aux.b32.s0 = 1000;
     }
 }
@@ -15250,7 +15336,7 @@ done:
     new_save_level(DISC_GROUP);
     scan_left_brace();
     push_nest();
-    cur_list.mode = -104;
+    cur_list.mode = -HMODE;
     cur_list.aux.b32.s0 = 1000;
 }
 
@@ -15436,7 +15522,7 @@ void cs_error(void)
 void push_math(group_code c)
 {
     push_nest();
-    cur_list.mode = -207;
+    cur_list.mode = -MMODE;
     cur_list.aux.b32.s1 = TEX_NULL;
     new_save_level(c);
 }
@@ -15501,6 +15587,7 @@ just_copy(int32_t p, int32_t h, int32_t t)
 
                 case WRITE_NODE:
                 case SPECIAL_NODE:
+                case LATESPECIAL_NODE:
                     r = get_node(WRITE_NODE_SIZE);
                     TOKEN_LIST_ref_count(WRITE_NODE_tokens(p))++;
                     words = WRITE_NODE_SIZE;
@@ -16015,6 +16102,20 @@ void alter_box_dimen(void)
         mem[b + c].b32.s1 = cur_val;
 }
 
+/* tex.ch: compare an existing font against "scaled s" without letting a
+ * scaling overflow leak into arith_error. */
+static bool
+font_size_matches_scaled(internal_font_number f, scaled_t s)
+{
+    bool save_arith_error = arith_error;
+    bool r;
+
+    arith_error = false;
+    r = (font_size[f] == xn_over_d(font_dsize[f], -(int32_t) s, 1000)) && !arith_error;
+    arith_error = save_arith_error;
+    return r;
+}
+
 void new_font(small_number a)
 {
     int32_t u;
@@ -16108,7 +16209,7 @@ void new_font(small_number a)
                     if (s > 0) {
                         if (s == font_size[f])
                             goto common_ending;
-                    } else if (font_size[f] == xn_over_d(font_dsize[f], -(int32_t) s, 1000))
+                    } else if (font_size_matches_scaled(f, s))
                         goto common_ending;
                 }
                 append_str(cur_area);
@@ -16123,7 +16224,7 @@ void new_font(small_number a)
                         if (s > 0) {
                             if (s == font_size[f])
                                 goto common_ending;
-                        } else if (font_size[f] == xn_over_d(font_dsize[f], -(int32_t) s, 1000))
+                        } else if (font_size_matches_scaled(f, s))
                             goto common_ending;
                     }
                 } else {
@@ -16242,6 +16343,19 @@ shift_case(void)
 }
 
 
+/* showstream.ch: send \show... output to an open \write stream if
+ * \showstream selects one; otherwise capture it as a warning diagnostic. */
+static void
+show_whatever_adjust_selector(void)
+{
+    int32_t s = INTPAR(show_stream);
+
+    if (s >= 0 && s < SELECTOR_NO_PRINT && write_open[s])
+        selector = s;
+    else
+        diagnostic_begin_capture_warning_here();
+}
+
 void show_whatever(void)
 {
     int32_t p;
@@ -16250,12 +16364,11 @@ void show_whatever(void)
     int32_t l;
     int32_t n;
 
-    // In all cases we eventually call error().
-    diagnostic_begin_capture_warning_here();
-
+    // Unless \showstream redirects the output, we eventually call error().
     switch (cur_chr) {
     case 3:
         {
+            show_whatever_adjust_selector();
             begin_diagnostic();
             show_activities();
         }
@@ -16273,6 +16386,7 @@ void show_whatever(void)
                 else
                     p = mem[cur_ptr + 1].b32.s1;
             }
+            show_whatever_adjust_selector();
             begin_diagnostic();
             print_nl_cstr("> \\box");
             print_int(cur_val);
@@ -16286,6 +16400,7 @@ void show_whatever(void)
     case 0:
         {
             get_token();
+            show_whatever_adjust_selector();
             print_nl_cstr("> ");
             if (cur_cs != 0) {
                 sprint_cs(cur_cs);
@@ -16297,12 +16412,14 @@ void show_whatever(void)
         break;
     case 4:
         {
+            show_whatever_adjust_selector();
             begin_diagnostic();
             show_save_groups();
         }
         break;
     case 6:
         {
+            show_whatever_adjust_selector();
             begin_diagnostic();
             print_nl_cstr("");
             print_ln();
@@ -16344,6 +16461,7 @@ void show_whatever(void)
     default:
         {
             p = the_toks();
+            show_whatever_adjust_selector();
             print_nl_cstr("> ");
             token_show(TEMP_HEAD);
             flush_list(mem[TEMP_HEAD].b32.s1);
@@ -16371,6 +16489,17 @@ void show_whatever(void)
 
 common_ending:
     capture_to_diagnostic(NULL); // calling with null twice is fine
+    if (selector < SELECTOR_NO_PRINT) {
+        print_ln();
+        if (interaction == BATCH_MODE)
+            selector = SELECTOR_NO_PRINT;
+        else
+            selector = SELECTOR_TERM_ONLY;
+        if (log_opened)
+            selector = selector + 2;
+        return;
+    }
+
     if (interaction < ERROR_STOP_MODE) {
         help_ptr = 0;
         error_count--;
@@ -16452,7 +16581,13 @@ void do_extension(void)
         break;
 
     case SPECIAL_NODE:
-        {
+        if (scan_keyword("shipout")) {
+            /* xetex.web: keep the tokens unexpanded until shipout */
+            new_whatsit(LATESPECIAL_NODE, WRITE_NODE_SIZE);
+            mem[cur_list.tail + 1].b32.s0 = TEX_NULL;
+            p = scan_toks(false, false);
+            mem[cur_list.tail + 1].b32.s1 = def_ref;
+        } else {
             new_whatsit(SPECIAL_NODE, WRITE_NODE_SIZE);
             mem[cur_list.tail + 1].b32.s0 = TEX_NULL;
             p = scan_toks(false, true);
@@ -16695,6 +16830,17 @@ tt_insert_special(const char *ascii_text)
     begin_token_list(toklist_start, INSERTED);
 }
 
+/* partoken.ch: put the current token back and insert \par_token before it,
+ * so that the user's (possibly redefined) \par ends the paragraph. */
+static void
+back_input_par_token(void)
+{
+    back_input();
+    cur_tok = par_token;
+    back_input();
+    cur_input.index = INSERTED;
+}
+
 void
 handle_right_brace(void)
 {
@@ -16733,16 +16879,28 @@ handle_right_brace(void)
         break;
 
     case VBOX_GROUP:
+        if (INTPAR(partoken_context) > 0 && cur_list.mode == HMODE) {
+            back_input_par_token();
+            break;
+        }
         end_graf();
         package(0);
         break;
 
     case VTOP_GROUP:
+        if (INTPAR(partoken_context) > 0 && cur_list.mode == HMODE) {
+            back_input_par_token();
+            break;
+        }
         end_graf();
         package(VTOP_CODE);
         break;
 
     case INSERT_GROUP:
+        if (INTPAR(partoken_context) > 1 && cur_list.mode == HMODE) {
+            back_input_par_token();
+            break;
+        }
         end_graf();
         q = GLUEPAR(split_top_skip);
         GLUE_SPEC_ref_count(q)++;
@@ -16778,7 +16936,13 @@ handle_right_brace(void)
         break;
 
     case OUTPUT_GROUP: /*1062:*/
-        if (cur_input.loc != TEX_NULL || (cur_input.index != OUTPUT_TEXT && cur_input.index != BACKED_UP)) {
+        if (INTPAR(partoken_context) > 1 && cur_list.mode == HMODE) {
+            back_input_par_token();
+            break;
+        }
+        while (cur_input.state == TOKEN_LIST && cur_input.loc == TEX_NULL && cur_input.index == BACKED_UP)
+            end_token_list(); /* output-ending brace may have been backed up */
+        if (cur_input.state != TOKEN_LIST || cur_input.loc != TEX_NULL || cur_input.index != OUTPUT_TEXT) {
             error_here_with_diagnostic("Unbalanced output routine");
             capture_to_diagnostic(NULL);
             help_ptr = 2;
@@ -16791,7 +16955,9 @@ handle_right_brace(void)
             } while (cur_input.loc != TEX_NULL);
         }
 
-        end_token_list();
+        output_can_end = true;
+        end_token_list(); /* conserve stack space in case more outputs are triggered */
+        output_can_end = false;
         end_graf();
         unsave();
         output_active = false;
@@ -16849,12 +17015,20 @@ handle_right_brace(void)
         break;
 
     case NO_ALIGN_GROUP:
+        if (INTPAR(partoken_context) > 1 && cur_list.mode == HMODE) {
+            back_input_par_token();
+            break;
+        }
         end_graf();
         unsave();
         align_peek();
         break;
 
     case VCENTER_GROUP:
+        if (INTPAR(partoken_context) > 0 && cur_list.mode == HMODE) {
+            back_input_par_token();
+            break;
+        }
         end_graf();
         unsave();
         save_ptr = save_ptr - 2;
@@ -17269,7 +17443,10 @@ reswitch:
 
     case VMODE + ENDV:
     case HMODE + ENDV:
-        do_endv();
+        if (INTPAR(partoken_context) > 1 && cur_list.mode == HMODE)
+            back_input_par_token();
+        else
+            do_endv();
         break;
 
     case ANY_MODE(END_CS_NAME):
@@ -17468,6 +17645,14 @@ reswitch:
     case ANY_MODE(AFTER_GROUP):
         get_token();
         save_for_after(cur_tok);
+        break;
+
+    case ANY_MODE(PARTOKEN_NAME):
+        get_token();
+        if (cur_cs > 0) {
+            par_loc = cur_cs;
+            par_token = cur_tok;
+        }
         break;
 
     case ANY_MODE(IN_STREAM):
@@ -18534,10 +18719,17 @@ prune_page_top(int32_t p, bool s)
             q = new_skip_param(GLUE_PAR__split_top_skip);
             mem[prev_p].b32.s1 = q;
             mem[q].b32.s1 = p;
-            if (mem[temp_ptr + 1].b32.s1 > mem[p + 3].b32.s1)
-                mem[temp_ptr + 1].b32.s1 = mem[temp_ptr + 1].b32.s1 - mem[p + 3].b32.s1;
-            else
-                mem[temp_ptr + 1].b32.s1 = 0;
+            if (INTPAR(xetex_upwards) > 0) {
+                if (mem[temp_ptr + 1].b32.s1 > BOX_depth(p))
+                    mem[temp_ptr + 1].b32.s1 = mem[temp_ptr + 1].b32.s1 - BOX_depth(p);
+                else
+                    mem[temp_ptr + 1].b32.s1 = 0;
+            } else {
+                if (mem[temp_ptr + 1].b32.s1 > mem[p + 3].b32.s1)
+                    mem[temp_ptr + 1].b32.s1 = mem[temp_ptr + 1].b32.s1 - mem[p + 3].b32.s1;
+                else
+                    mem[temp_ptr + 1].b32.s1 = 0;
+            }
             p = TEX_NULL;
             break;
         case WHATSIT_NODE:

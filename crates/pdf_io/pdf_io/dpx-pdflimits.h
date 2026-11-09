@@ -32,7 +32,7 @@
  */
 #define PDF_VERSION_MIN  13
 #define PDF_VERSION_MAX  20
-#define PDF_VERSION_DEFAULT 15
+#define PDF_VERSION_DEFAULT 17 /* TL2025+: dvipdfmx defaults to PDF 1.7 */
 
 /*
  * PDF_NAME_LEN_MAX: see, Appendix C of PDF Ref. v1.3, 2nd. ed.

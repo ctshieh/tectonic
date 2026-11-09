@@ -184,6 +184,7 @@ macro_rules! foreach_command {
         $callback! { NoBoundary NO_BOUNDARY _ _ 0 Group2 }
         $callback! { Radical RADICAL _ _ 0 Group2 }
         $callback! { EndCsName END_CS_NAME _ _ 0 Group2 }
+        $callback! { PartokenName PARTOKEN_NAME _ _ 34 Group2 }
         $callback! { CharGiven CHAR_GIVEN _ _ 0 Group3 }
         $callback! { MathGiven MATH_GIVEN _ _ 0 Group3 }
         $callback! { XetexMathGiven XETEX_MATH_GIVEN _ _ 0 Group3 }

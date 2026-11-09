@@ -340,7 +340,7 @@ dvipdfmx_main (
   unsigned char id1[16], id2[16];
   struct pdf_setting settings;
   int pdf_version_major = 1;
-  int pdf_version_minor = 5;
+  int pdf_version_minor = 7; /* TL2025+: dvipdfmx.cfg now defaults to PDF 1.7 */
   int compression_level = 9;
   double annot_grow_x = 0;
   double annot_grow_y = 0;

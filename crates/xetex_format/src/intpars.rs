@@ -396,6 +396,18 @@ const INT_PARS: &[IntPar] = &[
         until: FormatVersion::MAX,
     },
     IntPar {
+        name: "partoken_context",
+        primitive_kind: IntParPrimitiveKind::Standard,
+        since: 34,
+        until: FormatVersion::MAX,
+    },
+    IntPar {
+        name: "show_stream",
+        primitive_kind: IntParPrimitiveKind::Standard,
+        since: 34,
+        until: FormatVersion::MAX,
+    },
+    IntPar {
         name: "tracing_assigns",
         primitive_kind: IntParPrimitiveKind::Standard,
         since: 0,
@@ -453,6 +465,12 @@ const INT_PARS: &[IntPar] = &[
         name: "suppress_fontnotfound_error",
         primitive_kind: IntParPrimitiveKind::Standard,
         since: 0,
+        until: FormatVersion::MAX,
+    },
+    IntPar {
+        name: "ignore_primitive_error",
+        primitive_kind: IntParPrimitiveKind::Standard,
+        since: 34,
         until: FormatVersion::MAX,
     },
     IntPar {

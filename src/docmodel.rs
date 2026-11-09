@@ -214,8 +214,15 @@ impl WorkspaceCreatorExt for WorkspaceCreator {
             "test-bundle://".to_owned()
         } else {
             let loc = bundle.unwrap_or(config.default_bundle_loc().to_owned());
-            let mut gub = DefaultBackend::default();
-            gub.resolve_url(&loc)?
+
+            // Only network bundles need redirect resolution; local paths and
+            // file:// URLs (e.g. a locally built default bundle) are kept as-is.
+            if loc.starts_with("http://") || loc.starts_with("https://") {
+                let mut gub = DefaultBackend::default();
+                gub.resolve_url(&loc)?
+            } else {
+                loc
+            }
         };
 
         self.create(bundle_loc, Vec::new())

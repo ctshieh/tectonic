@@ -280,6 +280,60 @@ do_widths (pdf_font *font, double *widths)
  * It does not work with encodings that uses full 256 range since
  * GID = 0 is reserved for .notdef, so GID = 256 is not accessible.
  */
+/* TL2025 (truetype.c): the subset font used to get a single Mac Roman
+ * format 0 cmap, whose byte-sized entries broke glyph indices >= 256 (wrong
+ * widths, missing 256th glyph). Build a (1,0) format 6 and a (3,0) format 4
+ * subtable with 16-bit glyph indices instead. */
+#define CMAP_TABLE_SIZE 1086 /* = 20 + 522 + 544 */
+
+static char *
+new_cmap_table (void)
+{
+    char *cmap_table = NEW(CMAP_TABLE_SIZE, char);
+
+    memset(cmap_table, 0, CMAP_TABLE_SIZE);
+    sfnt_put_ushort(cmap_table,    0);             /* Version  */
+    sfnt_put_ushort(cmap_table+2,  2);             /* Number of subtables */
+    sfnt_put_ushort(cmap_table+4,  TT_MAC);        /* Platform ID */
+    sfnt_put_ushort(cmap_table+6,  TT_MAC_ROMAN);  /* Encoding ID */
+    sfnt_put_ulong (cmap_table+8,  20);            /* Offset   */
+    sfnt_put_ushort(cmap_table+12, TT_WIN);        /* Platform ID */
+    sfnt_put_ushort(cmap_table+14, TT_WIN_SYMBOL); /* Encoding ID */
+    sfnt_put_ulong (cmap_table+16, 542);           /* Offset   = 20 + 522 */
+    /* (1, 0) subtable */
+    sfnt_put_ushort(cmap_table+20, 6);             /* format   */
+    sfnt_put_ushort(cmap_table+22, 522);           /* length   = 10 + 512 */
+    sfnt_put_ushort(cmap_table+24, 0);             /* language */
+    sfnt_put_ushort(cmap_table+26, 0);             /* firstCode */
+    sfnt_put_ushort(cmap_table+28, 256);           /* entryCount */
+    /* (3, 0) subtable */
+    sfnt_put_ushort(cmap_table+542, 4);            /* format   */
+    sfnt_put_ushort(cmap_table+544, 544);          /* length   = 16 + 8 * 2 + 512 */
+    sfnt_put_ushort(cmap_table+546, 0);            /* language */
+    sfnt_put_ushort(cmap_table+548, 4);            /* segCountX2 */
+    sfnt_put_ushort(cmap_table+550, 4);            /* searchRange */
+    sfnt_put_ushort(cmap_table+552, 1);            /* entrySelector */
+    sfnt_put_ushort(cmap_table+554, 0);            /* rangeShift */
+    sfnt_put_ushort(cmap_table+556, 0xf0ff);       /* endCode[0] */
+    sfnt_put_ushort(cmap_table+558, 0xffff);       /* endCode[1] */
+    sfnt_put_ushort(cmap_table+560, 0);            /* reservedPad */
+    sfnt_put_ushort(cmap_table+562, 0xf000);       /* startCode[0] */
+    sfnt_put_ushort(cmap_table+564, 0xffff);       /* startCode[1] */
+    sfnt_put_short (cmap_table+566, 0);            /* idDelta[0] */
+    sfnt_put_short (cmap_table+568, 1);            /* idDelta[1] */
+    sfnt_put_ushort(cmap_table+570, 4);            /* idRangeOffset[0] */
+    sfnt_put_ushort(cmap_table+572, 0);            /* idRangeOffset[1] */
+
+    return cmap_table;
+}
+
+static void
+set_cmap_table_entry (char *cmap_table, int code, USHORT idx)
+{
+    sfnt_put_ushort(cmap_table +  30 + 2 * code, idx);
+    sfnt_put_ushort(cmap_table + 574 + 2 * code, idx);
+}
+
 static int
 do_builtin_encoding (pdf_font *font, const char *usedchars, sfnt *sfont)
 {
@@ -287,6 +341,7 @@ do_builtin_encoding (pdf_font *font, const char *usedchars, sfnt *sfont)
     char             *cmap_table;
     tt_cmap          *ttcm;
     USHORT            gid, idx;
+    USHORT            code_to_idx[256] = {0};
     int               code, count;
     double            widths[256];
 
@@ -296,16 +351,7 @@ do_builtin_encoding (pdf_font *font, const char *usedchars, sfnt *sfont)
         return  -1;
     }
 
-    cmap_table = NEW(274, char);
-    memset(cmap_table, 0, 274);
-    sfnt_put_ushort(cmap_table,    0);            /* Version  */
-    sfnt_put_ushort(cmap_table+2,  1);            /* Number of subtables */
-    sfnt_put_ushort(cmap_table+4,  TT_MAC);       /* Platform ID */
-    sfnt_put_ushort(cmap_table+6,  TT_MAC_ROMAN); /* Encoding ID */
-    sfnt_put_ulong (cmap_table+8,  12);           /* Offset   */
-    sfnt_put_ushort(cmap_table+12, 0);            /* Format   */
-    sfnt_put_ushort(cmap_table+14, 262);          /* Length   */
-    sfnt_put_ushort(cmap_table+16, 0);            /* Language */
+    cmap_table = new_cmap_table();
 
     glyphs = tt_build_init();
 
@@ -330,7 +376,8 @@ do_builtin_encoding (pdf_font *font, const char *usedchars, sfnt *sfont)
             if (idx == 0)
                 idx  = tt_add_glyph(glyphs, (USHORT)gid, (USHORT)count); /* count returned. */
         }
-        cmap_table[18+code] = idx & 0xff; /* bug here */
+        code_to_idx[code] = idx;
+        set_cmap_table_entry(cmap_table, code, idx);
         count++;
     }
     tt_cmap_release(ttcm);
@@ -347,7 +394,7 @@ do_builtin_encoding (pdf_font *font, const char *usedchars, sfnt *sfont)
 
     for (code = 0; code < 256; code++) {
         if (usedchars[code]) {
-            idx = tt_get_index(glyphs, (USHORT) cmap_table[18+code]);
+            idx = tt_get_index(glyphs, code_to_idx[code]);
             widths[code] = PDFUNIT(glyphs->gd[idx].advw);
         } else {
             widths[code] = 0.0;
@@ -360,7 +407,7 @@ do_builtin_encoding (pdf_font *font, const char *usedchars, sfnt *sfont)
 
     tt_build_finish(glyphs);
 
-    sfnt_set_table(sfont, "cmap", cmap_table, 274);
+    sfnt_set_table(sfont, "cmap", cmap_table, CMAP_TABLE_SIZE);
 
     return  0;
 }
@@ -766,6 +813,7 @@ do_custom_encoding (pdf_font *font,
     double                 widths[256];
     struct glyph_mapper    gm;
     USHORT                 idx, gid;
+    USHORT                 code_to_idx[256] = {0};
     int                    error = 0;
 
     assert(font && encoding && usedchars && sfont);
@@ -777,16 +825,7 @@ do_custom_encoding (pdf_font *font,
         return  -1;
     }
 
-    cmap_table = NEW(274, char);
-    memset(cmap_table, 0, 274);
-    sfnt_put_ushort(cmap_table,    0);            /* Version  */
-    sfnt_put_ushort(cmap_table+2,  1);            /* Number of subtables */
-    sfnt_put_ushort(cmap_table+4,  TT_MAC);       /* Platform ID */
-    sfnt_put_ushort(cmap_table+6,  TT_MAC_ROMAN); /* Encoding ID */
-    sfnt_put_ulong (cmap_table+8,  12);           /* Offset   */
-    sfnt_put_ushort(cmap_table+12, 0);            /* Format   */
-    sfnt_put_ushort(cmap_table+14, 262);          /* Length   */
-    sfnt_put_ushort(cmap_table+16, 0);            /* Language */
+    cmap_table = new_cmap_table();
 
     glyphs = tt_build_init();
 
@@ -823,7 +862,8 @@ do_custom_encoding (pdf_font *font,
                 count++;
             }
         }
-        cmap_table[18 + code] = idx & 0xff; /* bug here */
+        code_to_idx[code] = idx;
+        set_cmap_table_entry(cmap_table, code, idx);
     }
     clean_glyph_mapper(&gm);
 
@@ -836,7 +876,7 @@ do_custom_encoding (pdf_font *font,
 
     for (code = 0; code < 256; code++) {
         if (usedchars[code]) {
-            idx = tt_get_index(glyphs, (USHORT) cmap_table[18+code]);
+            idx = tt_get_index(glyphs, code_to_idx[code]);
             widths[code] = PDFUNIT(glyphs->gd[idx].advw);
         } else {
             widths[code] = 0.0;
@@ -849,7 +889,7 @@ do_custom_encoding (pdf_font *font,
 
     tt_build_finish(glyphs);
 
-    sfnt_set_table(sfont, "cmap", cmap_table, 274);
+    sfnt_set_table(sfont, "cmap", cmap_table, CMAP_TABLE_SIZE);
 
     return  0;
 }

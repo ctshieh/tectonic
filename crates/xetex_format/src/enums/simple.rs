@@ -236,6 +236,7 @@ declare! {
         Close CLOSE_NODE 2,
         Special SPECIAL_NODE 3,
         Language LANGUAGE_NODE 4,
+        LateSpecial LATESPECIAL_NODE 5,
         PdfSavePos PDF_SAVE_POS_NODE 21,
         NativeWord NATIVE_WORD_NODE 40,
         NativeWordActualText NATIVE_WORD_NODE_AT 41,

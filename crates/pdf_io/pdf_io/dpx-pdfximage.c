@@ -351,22 +351,22 @@ pdf_ximage_load_image (const char *ident, const char *filename, load_options opt
     for (i = 0; i < ic->count; i++) {
         I = &ic->ximages[i];
 
-        if (I->filename && streq_ptr(filename, I->filename)) {
-            id = i;
-            break;
-        }
+        if (!I->filename || !streq_ptr(filename, I->filename))
+            continue;
+        id = i;
+
+        if (I->attr.page_no != options.page_no)
+            continue;
+        if (pdf_compare_object(I->attr.dict, options.dict) != 0) /* ????? */
+            continue;
+        if (I->attr.bbox_type != options.bbox_type)
+            continue;
+
+        return id;
     }
 
-    if (id >= 0) {
-        if (I->attr.page_no == options.page_no &&
-            !pdf_compare_object(I->attr.dict, options.dict) && /* ????? */
-            I->attr.bbox_type == options.bbox_type) {
-            return id;
-        }
-
-        /* Tectonic: no filename futzing */
-        /* f = I->fullname; */
-    }
+    /* Tectonic: no filename futzing */
+    /* if (id >= 0) f = I->fullname; */
 
     /* This happens if we've already inserted the image into the PDF output.
      * In my one test case, it seems to just work to plunge along merrily
